@@ -1,0 +1,22 @@
+-- Query to get View DDL for Postgres
+select --schemaname,viewname,definition,
+'--DROP VIEW ' ||schemaname ||'.'||viewname || ';' ||'\n' 
+|| definition AS DDL
+from pg_views
+WHERE schemaname = <SchemaName>;
+
+
+--Postgres Procedure DDL Script
+SELECT
+   pg_get_functiondef(p.oid) as definition
+FROM pg_proc p
+JOIN pg_type t
+    ON p.prorettype = t.oid
+LEFT OUTER
+  JOIN pg_description d
+    ON p.oid = d.objoid
+LEFT OUTER
+  JOIN pg_namespace n
+    ON n.oid = p.pronamespace
+WHERE NOT p.proisagg
+AND n.nspname = <SchemaName>;
