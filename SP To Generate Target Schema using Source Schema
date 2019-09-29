@@ -1,0 +1,242 @@
+create or replace PACKAGE BODY VC_PKG_GENERATE_SCHEMA
+AS
+
+/*
+PROCEDURE to create schema/user
+*/
+PROCEDURE SP_CREATE_SCHEMA(P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_out_message Clob;
+l_user_count INTEGER;
+Begin
+
+SELECT COUNT(1) INTO l_user_count
+FROM all_users 
+WHERE LOWER(username) = LOWER(P_TARGET_SCHEMA);
+
+IF l_user_count = 1 THEN
+l_out_message := 'The User/Schema name exists';
+ELSIF l_user_count = 0 THEN
+l_out_message := 'The User/Schema build scuccessfully';
+
+EXECUTE IMMEDIATE 'Create user '|| P_TARGET_SCHEMA ||' identified by '|| P_TARGET_SCHEMA;
+EXECUTE IMMEDIATE 'Grant create session to  '|| P_TARGET_SCHEMA;
+EXECUTE IMMEDIATE 'Grant create table to  '|| P_TARGET_SCHEMA;
+EXECUTE IMMEDIATE 'Grant create view to  '|| P_TARGET_SCHEMA;
+EXECUTE IMMEDIATE 'Grant CREATE PROCEDURE to  '|| P_TARGET_SCHEMA;
+EXECUTE IMMEDIATE 'ALTER USER '||P_TARGET_SCHEMA||' QUOTA 100M ON USERS';
+
+END IF;
+
+END SP_CREATE_SCHEMA;
+
+/*
+PROCEDURE to create tables
+*/
+PROCEDURE SP_CREATE_TABLE(p_product_key IN VARCHAR2,P_SOURCE_SCHEMA IN VARCHAR2,P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_out Clob;
+l_outtest Clob;
+l_out_final CLOB;
+l_out_message Clob;
+l_user_count INTEGER;
+Begin
+
+FOR vc_tbl_no_P IN (SELECT object_name AS table_name FROM all_objects WHERE object_type = 'TABLE'
+						--AND object_name Like p_product_key||'_%' 
+						AND OWNER = P_SOURCE_SCHEMA
+						)
+LOOP
+ DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM,'STORAGE',false);
+ DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM, 'CONSTRAINTS',false);
+ DBMS_METADATA.SET_TRANSFORM_PARAM(DBMS_METADATA.SESSION_TRANSFORM, 'REF_CONSTRAINTS',false);
+
+SELECT DBMS_METADATA.get_ddl ('TABLE',vc_tbl_no_P.table_name ) iNTO l_out FROM DUAL;
+l_out_final := REPLACE(REPLACE(REPLACE(l_out,'"',NULL),P_SOURCE_SCHEMA,P_TARGET_SCHEMA),';',NULL);
+DELETE param_test;
+insert Into param_test VALUES(sysdate,l_out_final);
+COMMIT;
+EXECUTE IMMEDIATE l_out_final;
+
+END LOOP;
+END SP_CREATE_TABLE;
+
+/*
+PROCEDURE to create sequences
+*/
+PROCEDURE SP_CREATE_SEQUENCE(p_product_key IN VARCHAR2,P_SOURCE_SCHEMA IN VARCHAR2,P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_out Clob;
+--l_out_final CLOB;
+--l_out_final_a CLOB;
+--l_out_message Clob;
+--l_user_count INTEGER;
+Begin
+
+
+FOR vc_tbl_no_P IN (SELECT object_name FROM all_objects WHERE object_type = 'SEQUENCE' 
+						--AND object_name Like p_product_key||'_%' 
+						AND owner = P_SOURCE_SCHEMA)
+LOOP
+SELECT DBMS_METADATA.get_ddl ('SEQUENCE',vc_tbl_no_P.object_name ) iNTO l_out FROM DUAL;
+l_out := REPLACE(REPLACE(REPLACE(l_out,'"',NULL),P_SOURCE_SCHEMA,P_TARGET_SCHEMA),';',NULL);
+EXECUTE IMMEDIATE l_out;
+END LOOP;
+
+END SP_CREATE_SEQUENCE;
+
+/*
+PROCEDURE to create view
+*/
+PROCEDURE SP_CREATE_VIEW(p_product_key IN VARCHAR2,P_SOURCE_SCHEMA IN VARCHAR2,P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_out Clob;
+--l_out_final CLOB;
+--l_out_final_a CLOB;
+--l_out_message Clob;
+--l_user_count INTEGER;
+
+Begin
+
+
+FOR vc_tbl_no_P IN (SELECT object_name FROM all_objects WHERE  object_type = 'VIEW' 
+						--AND object_name Like p_product_key||'_%' 
+						AND owner = P_SOURCE_SCHEMA)
+LOOP
+SELECT DBMS_METADATA.get_ddl ('VIEW',vc_tbl_no_P.object_name ) iNTO l_out FROM DUAL;
+
+l_out := REPLACE(REPLACE(REPLACE(l_out,'"',NULL),P_SOURCE_SCHEMA,P_TARGET_SCHEMA),';',NULL);
+EXECUTE IMMEDIATE l_out;
+END LOOP;
+
+END SP_CREATE_VIEW;
+
+/*
+PROCEDURE to create package
+*/
+PROCEDURE SP_CREATE_PACKAGE(p_product_key IN VARCHAR2,P_SOURCE_SCHEMA IN VARCHAR2,P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_out Clob;
+l_out_final CLOB;
+l_out_Grant CLOB;
+--l_out_final_a CLOB;
+--l_out_message Clob;
+--L_SCHEMA VARCHAR2(100):= FN_GET_SCHEMA_NAME(p_user_id);
+--l_user_count INTEGER;
+Begin
+-- Missing Grant
+FOR vc_tbl_no_P IN (SELECT 'GRANT SELECT,INSERT,UPDATE,DELETE ON VC_MSTR_SCHEMA.'||table_name||' To '||P_TARGET_SCHEMA AS grant_sc 
+						FROM all_tables WHERE Owner = P_SOURCE_SCHEMA 
+						AND table_name Like 'VC_%')
+LOOP
+l_out_Grant := vc_tbl_no_P.grant_sc;
+EXECUTE IMMEDIATE l_out_Grant;
+END LOOP;
+
+
+FOR vc_tbl_no_P IN (SELECT object_name FROM all_objects WHERE object_name Like p_product_key||'_PKG_%' AND object_type = 'PACKAGE' AND owner = P_SOURCE_SCHEMA)
+LOOP
+SELECT REPLACE(DBMS_METADATA.get_ddl ('PACKAGE',vc_tbl_no_P.object_name ),';'||chr(10)||'/', ';') iNTO l_out FROM DUAL;
+
+l_out := REPLACE(REPLACE(REPLACE(l_out,'"',NULL),P_SOURCE_SCHEMA,P_TARGET_SCHEMA),'',NULL);
+l_out := SUBSTR(l_out,0,INSTR(l_out,'CREATE OR REPLACE',1,2)-1);
+EXECUTE IMMEDIATE l_out;
+END LOOP;
+
+FOR vc_tbl_no_P IN (SELECT object_name FROM all_objects WHERE object_name Like p_product_key||'_PKG_%' AND object_type = 'PACKAGE' AND owner = P_SOURCE_SCHEMA)
+LOOP
+l_out_final:= NULL;
+SELECT REPLACE(DBMS_METADATA.get_ddl ('PACKAGE_BODY',vc_tbl_no_P.object_name ),';'||chr(10)||'/', ';') iNTO l_out_final FROM DUAL;
+
+l_out_final := REPLACE(REPLACE(l_out_final,'"',NULL),P_SOURCE_SCHEMA,P_TARGET_SCHEMA);
+DELETE param_test;
+insert Into param_test VALUES(sysdate,l_out_final);
+COMMIT;
+EXECUTE IMMEDIATE l_out_final;
+END LOOP;
+
+END SP_CREATE_PACKAGE;
+
+/*
+PROCEDURE to create all db objects wrapper
+*/
+PROCEDURE SP_BUILD_SCHEMA_WRAPPER(p_product_key IN VARCHAR2,P_SOURCE_SCHEMA IN VARCHAR2,P_TARGET_SCHEMA IN VARCHAR2)
+AS
+l_err VARCHAR2(1000);
+BEGIN
+
+VC_PKG_GENERATE_SCHEMA.SP_CREATE_SCHEMA(P_TARGET_SCHEMA);
+VC_PKG_GENERATE_SCHEMA.SP_CREATE_TABLE(p_product_key,P_SOURCE_SCHEMA,P_TARGET_SCHEMA);
+VC_PKG_GENERATE_SCHEMA.SP_CREATE_VIEW(p_product_key,P_SOURCE_SCHEMA,P_TARGET_SCHEMA);
+VC_PKG_GENERATE_SCHEMA.SP_CREATE_SEQUENCE(p_product_key,P_SOURCE_SCHEMA,P_TARGET_SCHEMA);
+VC_PKG_GENERATE_SCHEMA.SP_CREATE_PACKAGE(p_product_key,P_SOURCE_SCHEMA,P_TARGET_SCHEMA);
+
+EXCEPTION 
+WHEN OTHERS THEN
+RAISE;
+l_err := SQLCODE;
+Insert Into LOG(LOG_ID,LOG_MESSAGE,LOG_SOURCE,SOURCE_USER,TARGET_USER,LOG_DATE,PARAMETER)
+VALUES(SEQ_LOG.Nextval,l_err,p_product_key,P_SOURCE_SCHEMA,P_TARGET_SCHEMA,SYSDATE,NULL);
+COMMIT;
+
+END SP_BUILD_SCHEMA_WRAPPER;
+
+PROCEDURE SP_DISABLE_ALL_CONSTRAINTS(P_PRODUCT_TYPE IN VARCHAR2)
+AS
+l_out_final CLOB;
+BEGIN
+
+FOR vc_tbl_no_P IN (SELECT 'ALTER TABLE '||TABLE_NAME||' DISABLE CONSTRAINT '||constraint_name AS all_cons FROM all_constraints WHERE Owner = P_SOURCE_SCHEMA)
+LOOP
+SELECT vc_tbl_no_P.all_cons iNTO l_out_final FROM DUAL;
+
+EXECUTE IMMEDIATE l_out_final;
+END LOOP;
+
+END SP_DISABLE_ALL_CONSTRAINTS;
+
+PROCEDURE SP_ENABLE_ALL_CONSTRAINTS(P_PRODUCT_TYPE IN VARCHAR2)
+AS
+l_out_final CLOB;
+BEGIN
+
+FOR vc_tbl_no_P IN (SELECT 'ALTER TABLE '||TABLE_NAME||' ENABLE CONSTRAINT '||constraint_name AS all_cons FROM all_constraints WHERE Owner = P_SOURCE_SCHEMA
+AND constraint_type <> 'R')
+LOOP
+SELECT vc_tbl_no_P.all_cons iNTO l_out_final FROM DUAL;
+
+EXECUTE IMMEDIATE l_out_final;
+END LOOP;
+
+-- REF
+FOR vc_tbl_no_P IN (SELECT 'ALTER TABLE '||TABLE_NAME||' ENABLE CONSTRAINT '||constraint_name AS all_cons FROM all_constraints WHERE Owner = P_SOURCE_SCHEMA
+AND constraint_type = 'R')
+LOOP
+SELECT vc_tbl_no_P.all_cons iNTO l_out_final FROM DUAL;
+
+EXECUTE IMMEDIATE l_out_final;
+END LOOP;
+END SP_ENABLE_ALL_CONSTRAINTS;
+
+PROCEDURE SP_EXPORT_ALL_CONSTRAINTS(P_PRODUCT_TYPE IN VARCHAR2,p_schema IN VARCHAR2)
+AS
+l_out_final CLOB;
+BEGIN
+-- REF
+FOR vc_tbl_no_P IN
+                (SELECT 'ALTER TABLE '||p_schema||'.'||TABLE_NAME||' ADD CONSTRAINT '||TABLE_NAME||(SELECT COUNT(1) FROM all_constraints b WHERE a.table_name = b.table_name)
+                                    
+                                    AS all_cons 
+                FROM all_constraints a
+                WHERE Owner = P_SOURCE_SCHEMA
+                AND constraint_type = 'R'
+                )
+LOOP
+SELECT vc_tbl_no_P.all_cons iNTO l_out_final FROM DUAL;
+
+EXECUTE IMMEDIATE l_out_final;
+END LOOP;
+
+END SP_EXPORT_ALL_CONSTRAINTS;
+
+END VC_PKG_GENERATE_SCHEMA;
