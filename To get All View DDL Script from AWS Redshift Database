@@ -1,0 +1,17 @@
+-- Query to get View DDL for Redshift
+SELECT
+    '--DROP VIEW ' 
+    + QUOTE_IDENT(n.nspname) 
+    + '.' 
+    + QUOTE_IDENT(c.relname) 
+    + ';' 
+    +'\n'
+   'CREATE OR REPLACE VIEW '
+    + c.relname
+    + '\n'
+    + definition  AS ddl
+FROM pg_namespace AS n
+INNER JOIN pg_class AS c ON n.oid = c.relnamespace
+inner join pg_views vw on vw.viewname = c.relname and vw.schemaname = n.nspname
+WHERE c.relkind = 'v'
+AND n.nspname  = <SchemaName>;
